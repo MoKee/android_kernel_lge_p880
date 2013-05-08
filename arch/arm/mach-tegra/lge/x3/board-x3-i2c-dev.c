@@ -53,9 +53,11 @@
 #include <mach-tegra/gpio-names.h>
 #include <mach-tegra/fuse.h>
 
+//#undef CONFIG_LGE_NFC_PN544
+
 //                                                                
 #if defined(CONFIG_LGE_NFC_PN544)
-#include <board-lge-nfc.h>
+#include "board-lge-nfc.h"
 #endif
 //                                                                
 

@@ -347,10 +347,36 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-CFLAGS_MODULE   =
-AFLAGS_MODULE   =
-LDFLAGS_MODULE  =
-CFLAGS_KERNEL	=
+MODFLAGS	= -DMODULE \
+		  -march=armv7-a \
+		  -mfpu=neon \
+		  -mtune=cortex-a9 \
+		  -Os \
+		  -fgcse-after-reload \
+		  -fipa-cp-clone \
+		  -fpredictive-commoning \
+		  -fsched-spec-load \
+		  -funswitch-loops \
+		  -fvect-cost-model
+ifdef CONFIG_GCC_48_FIXES
+  MODFLAGS	+=	-Wno-sizeof-pointer-memaccess
+endif
+CFLAGS_MODULE   = $(MODFLAGS)
+AFLAGS_MODULE   = $(MODFLAGS)
+LDFLAGS_MODULE  = -T $(srctree)/scripts/module-common.lds
+CFLAGS_KERNEL	= -march=armv7-a \
+		  -mfpu=neon \
+		  -mtune=cortex-a9 \
+		  -Os \
+		  -fgcse-after-reload \
+		  -fipa-cp-clone \
+		  -fpredictive-commoning \
+		  -fsched-spec-load \
+		  -funswitch-loops \
+		  -fvect-cost-model
+ifdef CONFIG_GCC_48_FIXES
+  CFLAGS_KERNEL	+=	-Wno-sizeof-pointer-memaccess
+endif
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
@@ -358,17 +384,26 @@ CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
 LINUXINCLUDE    := -I$(srctree)/arch/$(hdr-arch)/include \
-                   -Iarch/$(hdr-arch)/include/generated -Iinclude \
+                   -I$(srctree)/arch/$(hdr-arch)/lge/x3 \
+                   -I$(srctree)/drivers/misc/tspdrv \
+                       -Iarch/$(hdr-arch)/include/generated -Iinclude \
                    $(if $(KBUILD_SRC), -I$(srctree)/include) \
                    -include $(srctree)/include/linux/kconfig.h
 
 KBUILD_CPPFLAGS := -D__KERNEL__
+
+ifdef CONFIG_GCC_48_FIXES
+  KBUILD_CPPFLAGS	+=	-Wno-sizeof-pointer-memaccess
+endif
 
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks
+ifdef CONFIG_GCC_48_FIXES
+  KBUILD_CFLAGS	+=	-Wno-sizeof-pointer-memaccess
+endif
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
@@ -560,6 +595,10 @@ all: vmlinux
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os
+  ifdef CONFIG_GCC_48_OPTIMIZE
+    KBUILD_CFLAGS	+=	-Wno-maybe-uninitialized \
+				-Wno-sizeof-pointer-memaccess
+  endif
 else
 KBUILD_CFLAGS	+= -O2
 endif
@@ -594,6 +633,9 @@ endif
 
 ifdef CONFIG_DEBUG_INFO
 KBUILD_CFLAGS	+= -g
+ifdef CONFIG_GCC_48_FIXES
+KBUILD_CFLAGS	+= -gdwarf-2
+endif
 KBUILD_AFLAGS	+= -gdwarf-2
 endif
 
