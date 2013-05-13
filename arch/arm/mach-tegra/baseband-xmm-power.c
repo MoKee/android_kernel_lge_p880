@@ -1536,3 +1536,4 @@ static void __exit baseband_xmm_power_exit(void)
 
 module_init(baseband_xmm_power_init)
 module_exit(baseband_xmm_power_exit)
+
