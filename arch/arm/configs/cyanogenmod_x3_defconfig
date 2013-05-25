@@ -402,8 +402,6 @@ CONFIG_REBOOT_MONITOR=y
 # CONFIG_MACH_X3_DUMP_GPIO is not set
 CONFIG_CPWATCHER=y
 
-CONFIG_LG_VIBE=y
-
 #
 # Kernel Debug Selection
 #
