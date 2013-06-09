@@ -246,7 +246,7 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 HOSTCC       = gcc
 HOSTCXX      = g++
 HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer
-HOSTCXXFLAGS = -O2
+HOSTCXXFLAGS = -O2 -marm -march=armv7-a -mfpu=neon -ftree-vectorize -funsafe-math-optimizations -mfloat-abi=softfp -fsched-spec-load -mcpu=cortex-a9 -mtune=cortex-a9
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
