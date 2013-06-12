@@ -122,7 +122,7 @@ static bool CP_initiated_L2toL0;
 static bool modem_power_on;
 static int power_onoff;
 //To_Ril-recovery Nvidia_Patch_20111226 [Start]
-static unsigned long XYZ = 4500 * 1000000 + 800 * 1000 + 500;
+//static unsigned long XYZ = 4500 * 1000000 + 800 * 1000 + 500;
 static int enum_repeat = ENUM_REPEAT_TRY_CNT;
 //To_Ril-recovery Nvidia_Patch_20111226 [End]
 
@@ -136,7 +136,7 @@ static DEFINE_MUTEX(xmm_onoff_mutex);
 
 static struct workqueue_struct *workqueue_susp;
 static struct work_struct work_shortsusp, work_defaultsusp;
-static struct baseband_xmm_power_work_t *baseband_xmm_power_work_usb;
+//static struct baseband_xmm_power_work_t *baseband_xmm_power_work_usb;
 
 //Move place To_Ril-recovery Nvidia_Patch_20111226
 static struct baseband_xmm_power_work_t *baseband_xmm_power_work;
@@ -543,7 +543,9 @@ irqreturn_t baseband_xmm_power_ipc_ap_wake_irq(int irq, void *dev_id)
 {
 	int value;
 	struct baseband_power_platform_data *data = baseband_power_driver_data;
-	
+
+	struct usb_interface *intf;
+
 	value = gpio_get_value(baseband_power_driver_data->modem.xmm.ipc_ap_wake);
 	pr_debug("%s g(%d), wake_st(%d)\n", __func__, value, ipc_ap_wake_state);
 
@@ -617,7 +619,6 @@ irqreturn_t baseband_xmm_power_ipc_ap_wake_irq(int irq, void *dev_id)
 			}
 			if (reenable_autosuspend && usbdev) {
 			      reenable_autosuspend = false;
-				struct usb_interface *intf;
 				intf = usb_ifnum_to_if(usbdev, 0);
 				if (usb_autopm_get_interface_async(intf) >= 0) {
 					pr_debug("get_interface_async succeeded"	" - call put_interface\n");
@@ -782,7 +783,7 @@ static void baseband_xmm_power_L2_resume_work(struct work_struct *work)
 
 	if (!usbdev)
 	{
-		pr_debug("usbdev = %d\n",usbdev);
+		pr_debug("usbdev = %p\n",usbdev);
 		return;
 	}
 
@@ -858,7 +859,7 @@ static void baseband_xmm_power_flash_pm_ver_ge_1145_recovery
 {
 	int timeout_500ms = MODEM_ENUM_TIMEOUT_500MS;
 	int timeout_200ms = 0;
-	long err;
+	long err = 0;
 	
 	pr_debug("%s {\n", __func__);
 
@@ -1154,7 +1155,7 @@ static int baseband_xmm_power_pm_notifier_event(struct notifier_block *this,
 	return NOTIFY_DONE;
 }
 
-static int baseband_xmm_shutdown_function()
+static int baseband_xmm_shutdown_function(void)
 {
 	disable_irq(gpio_to_irq(baseband_power_driver_data->modem.xmm.ipc_ap_wake));
 	if ( l2_resume_work_done ) {
@@ -1168,6 +1169,8 @@ static int baseband_xmm_shutdown_function()
 	udelay(200);	
 	gpio_set_value(baseband_power_driver_data->modem.xmm.bb_rst, 0);
 	mdelay(20);
+
+	return 0;
 }
 
 
@@ -1523,6 +1526,7 @@ static int __init baseband_xmm_power_init(void)
 		pr_debug("%s\n", __func__);
 		return platform_driver_register(&baseband_power_driver);
 	}
+	return 0;
 }
 
 static void __exit baseband_xmm_power_exit(void)
