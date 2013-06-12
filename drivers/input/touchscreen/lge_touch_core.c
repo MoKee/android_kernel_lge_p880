@@ -36,10 +36,17 @@
 #include <linux/pm_qos_params.h>
 #include <mach/clk.h>
 
+#include <linux/pm.h>
+#include <linux/pm_runtime.h>
+
 #include <asm/atomic.h>
 #include <mach/gpio.h>
 
 #include <linux/input/lge_touch_core.h>
+
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+#include <linux/input/sweep2wake.h>
+#endif
 
 struct lge_touch_data
 {
@@ -112,6 +119,25 @@ struct timeval t_debug[TIME_PROFILE_MAX];
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 static void touch_early_suspend(struct early_suspend *h);
 static void touch_late_resume(struct early_suspend *h);
+#endif
+
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+/* gives back true if only one touch is recognized */
+bool is_single_touch(struct lge_touch_data *ts)
+{
+        int i = 0, cnt = 0;
+
+        for( i = 0; i < ts->pdata->caps->max_id; i++ ) {
+                if ((!ts->ts_data.curr_data[i].state) ||
+                    (ts->ts_data.curr_data[i].state == ABS_RELEASE))
+                        continue;
+                else cnt++;
+        }
+        if (cnt == 1)
+                return true;
+        else
+                return false;
+}
 #endif
 
 /* Auto Test interface for some model */
@@ -413,7 +439,6 @@ static void release_all_ts_event(struct lge_touch_data *ts)
 				TOUCH_INFO_MSG("Touch KEY[%d] is released\n", ts->ts_data.prev_button.key_code);
 		}
 	}
-
 	input_sync(ts->input_dev);
 
 	ts->ts_data.total_num = 0;
@@ -549,7 +574,7 @@ static int touch_ic_init(struct lge_touch_data *ts)
 		next_work = atomic_read(&ts->next_work);
 
 		if(unlikely(int_pin != 1 && next_work <= 0)){
-			TOUCH_INFO_MSG("WARN: Interrupt pin is low - next_work: %d, try_count: %d]\n",
+			TOUCH_INFO_MSG("WARN:(init)Interrupt pin is low - next_work: %d, try_count: %d]\n",
 					next_work, ts->ic_init_err_cnt);
 			goto err_out_retry;
 		}
@@ -923,8 +948,19 @@ static int jitter_filter_func(struct lge_touch_data *ts)
 		ts->jitter_filter.his_data[id].y = ts->ts_data.curr_data[i].y_position;
 	}
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	detect_sweep2wake(ts->ts_data.curr_data[i].x_position, ts->ts_data.curr_data[i].y_position, ts);
+#endif
 	ts->jitter_filter.id_mask = new_id_mask;
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	if (s2w_switch > 0) {
+		exec_count = true;
+		barrier[0] = false;
+		barrier[1] = false;
+		scr_on_touch = false;
+	}
+#endif
 	return 0;
 }
 
@@ -1194,7 +1230,7 @@ out:
 		next_work = atomic_read(&ts->next_work);
 
 		if(unlikely(int_pin != 1 && next_work <= 0)){
-			TOUCH_INFO_MSG("WARN: Interrupt pin is low - next_work: %d, try_count: %d]\n",
+			TOUCH_INFO_MSG("WARN:(work)Interrupt pin is low - next_work: %d, try_count: %d]\n",
 					next_work, ts->work_sync_err_cnt);
 			goto err_out_retry;
 		}
@@ -1882,6 +1918,9 @@ static void touch_fw_upgrade_func(struct work_struct *work_fw_upgrade)
 	do_gettimeofday(&t_debug[TIME_FW_UPGRADE_END]);
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	if (s2w_switch == 0)
+#endif 
 	touch_power_cntl(ts, POWER_OFF);
 
 	if (saved_state != POWER_OFF) {
@@ -1895,8 +1934,12 @@ static void touch_fw_upgrade_func(struct work_struct *work_fw_upgrade)
 
 		touch_ic_init(ts);
 
-		if(saved_state == POWER_WAKE || saved_state == POWER_SLEEP)
+		if (saved_state == POWER_WAKE || saved_state == POWER_SLEEP)
+		#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+			touch_power_cntl(ts, POWER_ON);
+		#else 
 			touch_power_cntl(ts, saved_state);
+		#endif
 	}
 
 	if (likely(touch_debug_mask & (DEBUG_FW_UPGRADE |DEBUG_BASE_INFO)))
@@ -2665,6 +2708,73 @@ static struct sys_device lge_touch_sys_device = {
 	.cls	= &lge_touch_sys_class,
 };
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+static ssize_t lge_touch_sweep2wake_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	size_t count = 0;
+
+	count += sprintf(buf, "%d\n", s2w_switch);
+
+	return count;
+}
+
+static ssize_t lge_touch_sweep2wake_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	unsigned int data;
+
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		if (data == 1) {
+			pr_info("%s: enabled\n", __FUNCTION__);
+			s2w_switch = data;
+		}
+		else if (data == 0) {
+			pr_info("%s: disabled\n", __FUNCTION__);
+			s2w_switch = data;
+		}
+		else
+			pr_info("%s: bad value: %u\n", __FUNCTION__, data);
+	} else
+		pr_info("%s: unknown input!\n", __FUNCTION__);
+
+	return count;
+}
+
+static DEVICE_ATTR(sweep2wake, (S_IWUSR|S_IRUGO),
+	lge_touch_sweep2wake_show, lge_touch_sweep2wake_store);
+#endif
+
+static struct kobject *android_touch_kobj;
+
+static int lge_touch_sysfs_init(void)
+{
+	int ret ;
+
+	android_touch_kobj = kobject_create_and_add("android_touch", NULL) ;
+	if (android_touch_kobj == NULL) {
+		pr_debug("[lge_touch]%s: subsystem_register failed\n", __func__);
+		ret = -ENOMEM;
+		return ret;
+	}
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	ret = sysfs_create_file(android_touch_kobj, &dev_attr_sweep2wake.attr);
+	if (ret) {
+		printk(KERN_ERR "%s: sysfs_create_file failed\n", __func__);
+		return ret;
+	}
+#endif
+	return 0 ;
+}
+
+static void lge_touch_sysfs_deinit(void)
+{
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	sysfs_remove_file(android_touch_kobj, &dev_attr_sweep2wake.attr);
+#endif
+	kobject_del(android_touch_kobj);
+}
+
 static int touch_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct lge_touch_data *ts;
@@ -2688,6 +2798,12 @@ static int touch_probe(struct i2c_client *client, const struct i2c_device_id *id
 		ret = -ENOMEM;
 		goto err_alloc_data_failed;
 	}
+	
+	/* Enable runtime PM ops, start in ACTIVE mode */
+	ret = pm_runtime_set_active(&client->dev);
+	if (ret < 0)
+		dev_dbg(&client->dev, "unable to set runtime pm state\n");
+	pm_runtime_enable(&client->dev);
 
 	ts->pdata = client->dev.platform_data;
 	ret = check_platform_data(ts->pdata);
@@ -2831,9 +2947,14 @@ static int touch_probe(struct i2c_client *client, const struct i2c_device_id *id
 		TOUCH_DEBUG_MSG("ts->pdata->int_pin\n");
 
 		ret = request_threaded_irq(client->irq, touch_irq_handler,
-				touch_thread_irq_handler,
-				ts->pdata->role->irqflags | IRQF_ONESHOT, client->name, ts);
-
+				NULL,
+	#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+			ts->pdata->role->irqflags | IRQF_ONESHOT| IRQF_TRIGGER_LOW | IRQF_NO_SUSPEND,
+	#else
+		ts->pdata->role->irqflags | IRQF_ONESHOT,
+	#endif
+		client->name, ts);
+	
 		if (ret < 0) {
 			TOUCH_ERR_MSG("request_irq failed. use polling mode\n");
 			goto err_interrupt_failed;
@@ -2869,6 +2990,7 @@ static int touch_probe(struct i2c_client *client, const struct i2c_device_id *id
 		ts->accuracy_filter.direction_count = one_sec / 4;
 		ts->accuracy_filter.touch_max_count = one_sec / 2;
 	}
+	device_init_wakeup(&client->dev, true); 
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 	ts->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
@@ -2876,6 +2998,7 @@ static int touch_probe(struct i2c_client *client, const struct i2c_device_id *id
 	ts->early_suspend.resume = touch_late_resume;
 	register_early_suspend(&ts->early_suspend);
 #endif
+	lge_touch_sysfs_init();
 
 	/* Register sysfs for making fixed communication path to framework layer */
 	ret = sysdev_class_register(&lge_touch_sys_class);
@@ -2920,6 +3043,8 @@ err_input_dev_alloc_failed:
 err_power_failed:
 err_assign_platform_data:
 	kfree(ts);
+	pm_runtime_set_suspended(&client->dev);
+	pm_runtime_disable(&client->dev); 
 err_alloc_data_failed:
 err_check_functionality_failed:
 	return ret;
@@ -2945,6 +3070,13 @@ static int touch_remove(struct i2c_client *client)
 
 	unregister_early_suspend(&ts->early_suspend);
 
+	lge_touch_sysfs_init();
+
+	pm_runtime_set_suspended(&client->dev);
+	pm_runtime_disable(&client->dev);
+
+	device_init_wakeup(&client->dev, 0);
+
 	if (ts->pdata->role->operation_mode)
 		free_irq(client->irq, ts);
 	else
@@ -2962,6 +3094,10 @@ static void touch_early_suspend(struct early_suspend *h)
 	struct lge_touch_data *ts =
 			container_of(h, struct lge_touch_data, early_suspend);
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+        scr_suspended = true;
+#endif
+
 	if (unlikely(touch_debug_mask & DEBUG_TRACE))
 		TOUCH_DEBUG_MSG("\n");
 
@@ -2970,19 +3106,31 @@ static void touch_early_suspend(struct early_suspend *h)
 		return;
 	}
 
-	if (ts->pdata->role->operation_mode)
-		disable_irq(ts->client->irq);
-	else
-		hrtimer_cancel(&ts->timer);
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	if (s2w_switch == 0)
+#endif
+	{ 
+		if (ts->pdata->role->operation_mode)
+			disable_irq(ts->client->irq);
+		else
+			hrtimer_cancel(&ts->timer);
+		
+			cancel_work_sync(&ts->work);
+			cancel_delayed_work_sync(&ts->work_init);
+		if (ts->pdata->role->key_type == TOUCH_HARD_KEY)
+			cancel_delayed_work_sync(&ts->work_touch_lock);
 
-	cancel_work_sync(&ts->work);
-	cancel_delayed_work_sync(&ts->work_init);
-	if (ts->pdata->role->key_type == TOUCH_HARD_KEY)
-		cancel_delayed_work_sync(&ts->work_touch_lock);
+		release_all_ts_event(ts);
 
-	release_all_ts_event(ts);
+		touch_power_cntl(ts, ts->pdata->role->suspend_pwr);
+	}
 
-	touch_power_cntl(ts, ts->pdata->role->suspend_pwr);
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	else if (s2w_switch > 0) {
+		release_all_ts_event(ts);
+		enable_irq_wake(ts->client->irq);
+	}
+#endif
 
 #ifdef LGE_RESTRICT_POWER_DURING_SLEEP
 	ts->wait_first_touch_detected = 0;
@@ -2994,6 +3142,12 @@ static void touch_late_resume(struct early_suspend *h)
 	struct lge_touch_data *ts =
 			container_of(h, struct lge_touch_data, early_suspend);
 
+	#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+		int int_pin = 0;
+		int next_work = 0;
+		scr_suspended = false;
+	#endif
+
 	if (unlikely(touch_debug_mask & DEBUG_TRACE))
 		TOUCH_DEBUG_MSG("\n");
 
@@ -3002,6 +3156,10 @@ static void touch_late_resume(struct early_suspend *h)
 		return;
 	}
 
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+	if (s2w_switch == 0)
+#endif
+	{ 
 	touch_power_cntl(ts, ts->pdata->role->resume_pwr);
 
 #ifdef LGE_RESTRICT_POWER_DURING_SLEEP
@@ -3018,6 +3176,30 @@ static void touch_late_resume(struct early_suspend *h)
 				msecs_to_jiffies(ts->pdata->role->booting_delay));
 	else
 		queue_delayed_work(touch_wq, &ts->work_init, 0);
+	}
+#ifdef CONFIG_TOUCHSCREEN_SWEEP2WAKE
+        else if (s2w_switch > 0) {
+		disable_irq_wake(ts->client->irq);
+		/* Interrupt pin check after IC init - avoid Touch lockup */
+		if (ts->pdata->role->operation_mode == INTERRUPT_MODE) {
+			int_pin = gpio_get_value(ts->pdata->int_pin);
+			next_work = atomic_read(&ts->next_work);
+
+			if (unlikely(int_pin != 1 && next_work <= 0)) {
+				TOUCH_INFO_MSG("WARN: (s2w)Interrupt pin is low (Lockup detected) - next_work: %d, try_count: %d]\n",
+						next_work, ts->ic_init_err_cnt);
+				pr_warn("touch core: (s2w)disable irqs!\n");
+				disable_irq(ts->client->irq);
+				pr_warn("touch core: (s2w)release all Touch events!\n");
+				release_all_ts_event(ts);
+				pr_warn("touch core: (s2w)enable irqs!\n");
+				enable_irq(ts->client->irq);
+				pr_warn("touch core: (s2w)force IC init!\n");
+				touch_ic_init(ts); 
+			}
+		}
+	}
+#endif
 }
 #endif
 
