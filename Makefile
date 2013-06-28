@@ -246,7 +246,7 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 HOSTCC       = gcc
 HOSTCXX      = g++
 HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer
-HOSTCXXFLAGS = -O2 -marm -march=armv7-a -mfpu=neon -ftree-vectorize -funsafe-math-optimizations -mfloat-abi=softfp -fsched-spec-load -mcpu=cortex-a9 -mtune=cortex-a9
+HOSTCXXFLAGS = -O2
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -347,36 +347,10 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-MODFLAGS	= -DMODULE \
-		  -march=armv7-a \
-		  -mfpu=neon \
-		  -mtune=cortex-a9 \
-		  -Os \
-		  -fgcse-after-reload \
-		  -fipa-cp-clone \
-		  -fpredictive-commoning \
-		  -fsched-spec-load \
-		  -funswitch-loops \
-		  -fvect-cost-model
-ifdef CONFIG_GCC_48_FIXES
-  MODFLAGS	+=	-Wno-sizeof-pointer-memaccess
-endif
-CFLAGS_MODULE   = $(MODFLAGS)
-AFLAGS_MODULE   = $(MODFLAGS)
-LDFLAGS_MODULE  = -T $(srctree)/scripts/module-common.lds
-CFLAGS_KERNEL	= -march=armv7-a \
-		  -mfpu=neon \
-		  -mtune=cortex-a9 \
-		  -Os \
-		  -fgcse-after-reload \
-		  -fipa-cp-clone \
-		  -fpredictive-commoning \
-		  -fsched-spec-load \
-		  -funswitch-loops \
-		  -fvect-cost-model
-ifdef CONFIG_GCC_48_FIXES
-  CFLAGS_KERNEL	+=	-Wno-sizeof-pointer-memaccess
-endif
+CFLAGS_MODULE   = -fno-pic
+AFLAGS_MODULE   =
+LDFLAGS_MODULE  =
+CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
@@ -392,18 +366,11 @@ LINUXINCLUDE    := -I$(srctree)/arch/$(hdr-arch)/include \
 
 KBUILD_CPPFLAGS := -D__KERNEL__
 
-ifdef CONFIG_GCC_48_FIXES
-  KBUILD_CPPFLAGS	+=	-Wno-sizeof-pointer-memaccess
-endif
-
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks
-ifdef CONFIG_GCC_48_FIXES
-  KBUILD_CFLAGS	+=	-Wno-sizeof-pointer-memaccess
-endif
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
@@ -595,12 +562,8 @@ all: vmlinux
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os
-  ifdef CONFIG_GCC_48_OPTIMIZE
-    KBUILD_CFLAGS	+=	-Wno-maybe-uninitialized \
-				-Wno-sizeof-pointer-memaccess
-  endif
 else
-KBUILD_CFLAGS	+= -O2
+KBUILD_CFLAGS	+= -O2 -marm -march=armv7-a -mfpu=neon -ftree-vectorize -funsafe-math-optimizations -mfloat-abi=softfp -fsched-spec-load -mcpu=cortex-a9 -mtune=cortex-a9
 endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
@@ -633,9 +596,6 @@ endif
 
 ifdef CONFIG_DEBUG_INFO
 KBUILD_CFLAGS	+= -g
-ifdef CONFIG_GCC_48_FIXES
-KBUILD_CFLAGS	+= -gdwarf-2
-endif
 KBUILD_AFLAGS	+= -gdwarf-2
 endif
 
