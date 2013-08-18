@@ -59,12 +59,6 @@ static DEFINE_PER_CPU(char[CPUFREQ_NAME_LEN], cpufreq_cpu_governor);
 #endif
 static DEFINE_SPINLOCK(cpufreq_driver_lock);
 
-#ifdef CONFIG_CPU_OC
-static unsigned int freq_table[17] = { 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700 };
-#else
-static unsigned int freq_table[17] = { 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500 };
-#endif
-
 /*
  * cpu_policy_rwsem is a per CPU reader-writer semaphore designed to cure
  * all cpufreq/hotplug/workqueue/etc related lock issues.
@@ -747,7 +741,7 @@ static ssize_t store_UV_mV_table(struct cpufreq_policy *policy, char *buf, size_
 	cpu_clk_g->dvfs->millivolts = user_mv_table;
 
 	return count;
-	}
+}
 
 static ssize_t show_lp_UV_mV_table(struct cpufreq_policy *policy, char *buf)
 {

@@ -95,7 +95,7 @@ static int status = 0;
 
 #define PWM_PERIOD_DEFAULT              44000 //20.3KHz
 //#define PWM_DUTY_DEFAULT              (PWM_PERIOD_DEFAULT >> 1) //50%
-#define PWM_DUTY_DEFAULT              (PWM_PERIOD_DEFAULT *.75 ) //75%
+#define PWM_DUTY_DEFAULT              (PWM_PERIOD_DEFAULT *1 ) //100%
 
 VibeUInt32 g_nPWM_Freq = PWM_PERIOD_DEFAULT;
 
@@ -115,7 +115,7 @@ IMMVIBESPIAPI VibeStatus SYS_API__I2C__Write( _addr, _data)
 /*
 ** Called to disable amp (disable output force)
 */
-/*IMMVIBESPIAPI*/ VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex)
+IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex)
 {
     int cnt = 0;
     unsigned char I2C_data[1];
@@ -147,13 +147,10 @@ IMMVIBESPIAPI VibeStatus SYS_API__I2C__Write( _addr, _data)
     return VIBE_S_SUCCESS;
 }
 
-EXPORT_SYMBOL(ImmVibeSPI_ForceOut_AmpDisable);
-
-
 /*
 ** Called to enable amp (enable output force0)
 */
-/*IMMVIBESPIAPI*/ VibeStatus ImmVibeSPI_ForceOut_AmpEnable(VibeUInt8 nActuatorIndex)
+IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpEnable(VibeUInt8 nActuatorIndex)
 {
     int cnt = 0;	
     unsigned char I2C_data[1];
@@ -279,7 +276,6 @@ EXPORT_SYMBOL(ImmVibeSPI_ForceOut_AmpDisable);
 
     return VIBE_S_SUCCESS;
 }
-EXPORT_SYMBOL(ImmVibeSPI_ForceOut_AmpEnable);
 
 /*
 ** Called at initialization time to set PWM frequencies, disable amp, etc...

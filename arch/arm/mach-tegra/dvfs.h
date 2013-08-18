@@ -84,7 +84,6 @@ struct dvfs {
 	/* Must be initialized before tegra_dvfs_init */
 	int freqs_mult;
 	unsigned long freqs[MAX_DVFS_FREQS];
-
 	unsigned long *alt_freqs;
 	unsigned int *millivolts;
 	struct dvfs_rail *dvfs_rail;

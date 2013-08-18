@@ -302,7 +302,6 @@ static int max8971_set_reg(struct max8971_chip *chip, int enable)
 				reg_val = ((chip->pdata->chgcc_factory << MAX8971_CHGCC_SHIFT) |
 						(chip->pdata->fchgtime<<MAX8971_FCHGTIME_SHIFT));
 				break;
-
 			default :
 				dev_dbg(&chip->client->dev, "Unknown charger cabel type!!!\n");
 				reg_val = ((chip->pdata->chgcc_usb500 << MAX8971_CHGCC_SHIFT) |
