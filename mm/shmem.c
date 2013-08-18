@@ -379,7 +379,7 @@ static int shmem_free_swap(struct address_space *mapping,
 /*
  * Pagevec may contain swap entries, so shuffle up pages before releasing.
  */
-static void shmem_pagevec_release(struct pagevec *pvec)
+static void shmem_deswap_pagevec(struct pagevec *pvec)
 {
 	int i, j;
 
@@ -389,7 +389,36 @@ static void shmem_pagevec_release(struct pagevec *pvec)
 			pvec->pages[j++] = page;
 	}
 	pvec->nr = j;
-	pagevec_release(pvec);
+}
+
+/*
+ * SysV IPC SHM_UNLOCK restore Unevictable pages to their evictable lists.
+ */
+void shmem_unlock_mapping(struct address_space *mapping)
+{
+	struct pagevec pvec;
+	pgoff_t indices[PAGEVEC_SIZE];
+	pgoff_t index = 0;
+
+	pagevec_init(&pvec, 0);
+	/*
+	 * Minor point, but we might as well stop if someone else SHM_LOCKs it.
+	 */
+	while (!mapping_unevictable(mapping)) {
+		/*
+		 * Avoid pagevec_lookup(): find_get_pages() returns 0 as if it
+		 * has finished, if it hits a row of PAGEVEC_SIZE swap entries.
+		 */
+		pvec.nr = shmem_find_get_pages_and_swap(mapping, index,
+					PAGEVEC_SIZE, pvec.pages, indices);
+		if (!pvec.nr)
+			break;
+		index = indices[pvec.nr - 1] + 1;
+		shmem_deswap_pagevec(&pvec);
+		check_move_unevictable_pages(pvec.pages, pvec.nr);
+		pagevec_release(&pvec);
+		cond_resched();
+	}
 }
 
 /*
@@ -440,7 +469,8 @@ void shmem_truncate_range(struct inode *inode, loff_t lstart, loff_t lend)
 			}
 			unlock_page(page);
 		}
-		shmem_pagevec_release(&pvec);
+		shmem_deswap_pagevec(&pvec);
+		pagevec_release(&pvec);
 		mem_cgroup_uncharge_end();
 		cond_resched();
 		index++;
@@ -470,7 +500,8 @@ void shmem_truncate_range(struct inode *inode, loff_t lstart, loff_t lend)
 			continue;
 		}
 		if (index == start && indices[0] > end) {
-			shmem_pagevec_release(&pvec);
+			shmem_deswap_pagevec(&pvec);
+			pagevec_release(&pvec);
 			break;
 		}
 		mem_cgroup_uncharge_start();
@@ -494,7 +525,8 @@ void shmem_truncate_range(struct inode *inode, loff_t lstart, loff_t lend)
 			}
 			unlock_page(page);
 		}
-		shmem_pagevec_release(&pvec);
+		shmem_deswap_pagevec(&pvec);
+		pagevec_release(&pvec);
 		mem_cgroup_uncharge_end();
 		index++;
 	}
@@ -681,8 +713,17 @@ static int shmem_writepage(struct page *page, struct writeback_control *wbc)
 	info = SHMEM_I(inode);
 	if (info->flags & VM_LOCKED)
 		goto redirty;
+#ifdef CONFIG_ZRAM_FOR_ANDROID
+	/*
+	 * Modification for compcache
+	 * shmem_writepage can be reason of kernel panic when using swap.
+	 * This modification prevent using swap by shmem.
+	 */
+	goto redirty;
+#else
 	if (!total_swap_pages)
 		goto redirty;
+#endif
 
 	/*
 	 * shmem_backing_dev_info's capabilities prevent regular writeback or
@@ -1068,7 +1109,6 @@ int shmem_lock(struct file *file, int lock, struct user_struct *user)
 		user_shm_unlock(inode->i_size, user);
 		info->flags &= ~VM_LOCKED;
 		mapping_clear_unevictable(file->f_mapping);
-		scan_mapping_unevictable_pages(file->f_mapping);
 	}
 	retval = 0;
 
@@ -1988,6 +2028,7 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 			       bool remount)
 {
 	char *this_char, *value, *rest;
+	struct mempolicy *mpol = NULL;
 
 	while (options != NULL) {
 		this_char = options;
@@ -2014,7 +2055,7 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 			printk(KERN_ERR
 			    "tmpfs: No value for mount option '%s'\n",
 			    this_char);
-			return 1;
+			goto error;
 		}
 
 		if (!strcmp(this_char,"size")) {
@@ -2057,19 +2098,25 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 			if (*rest)
 				goto bad_val;
 		} else if (!strcmp(this_char,"mpol")) {
-			if (mpol_parse_str(value, &sbinfo->mpol, 1))
+			mpol_put(mpol);
+			if (mpol_parse_str(value, &mpol, 1)) {
+				mpol = NULL;
 				goto bad_val;
+			}
 		} else {
 			printk(KERN_ERR "tmpfs: Bad mount option %s\n",
 			       this_char);
-			return 1;
+			goto error;
 		}
 	}
+	sbinfo->mpol = mpol;
 	return 0;
 
 bad_val:
 	printk(KERN_ERR "tmpfs: Bad value '%s' for mount option '%s'\n",
 	       value, this_char);
+error:
+	mpol_put(mpol);
 	return 1;
 
 }
@@ -2081,6 +2128,7 @@ static int shmem_remount_fs(struct super_block *sb, int *flags, char *data)
 	unsigned long inodes;
 	int error = -EINVAL;
 
+	config.mpol = NULL;
 	if (shmem_parse_options(data, &config, true))
 		return error;
 
@@ -2105,8 +2153,13 @@ static int shmem_remount_fs(struct super_block *sb, int *flags, char *data)
 	sbinfo->max_inodes  = config.max_inodes;
 	sbinfo->free_inodes = config.max_inodes - inodes;
 
-	mpol_put(sbinfo->mpol);
-	sbinfo->mpol        = config.mpol;	/* transfers initial ref */
+	/*
+	 * Preserve previous mempolicy unless mpol remount option was specified.
+	 */
+	if (config.mpol) {
+		mpol_put(sbinfo->mpol);
+		sbinfo->mpol = config.mpol;	/* transfers initial ref */
+	}
 out:
 	spin_unlock(&sbinfo->stat_lock);
 	return error;
@@ -2137,6 +2190,7 @@ static void shmem_put_super(struct super_block *sb)
 	struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
 
 	percpu_counter_destroy(&sbinfo->used_blocks);
+	mpol_put(sbinfo->mpol);
 	kfree(sbinfo);
 	sb->s_fs_info = NULL;
 }
@@ -2438,6 +2492,10 @@ int shmem_unuse(swp_entry_t swap, struct page *page)
 int shmem_lock(struct file *file, int lock, struct user_struct *user)
 {
 	return 0;
+}
+
+void shmem_unlock_mapping(struct address_space *mapping)
+{
 }
 
 void shmem_truncate_range(struct inode *inode, loff_t lstart, loff_t lend)

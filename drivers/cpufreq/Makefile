@@ -10,16 +10,6 @@ obj-$(CONFIG_CPU_FREQ_GOV_USERSPACE)	+= cpufreq_userspace.o
 obj-$(CONFIG_CPU_FREQ_GOV_ONDEMAND)	+= cpufreq_ondemand.o
 obj-$(CONFIG_CPU_FREQ_GOV_CONSERVATIVE)	+= cpufreq_conservative.o
 obj-$(CONFIG_CPU_FREQ_GOV_INTERACTIVE)	+= cpufreq_interactive.o
-obj-$(CONFIG_CPU_FREQ_GOV_GAMING)	+= cpufreq_gaming.o
-#obj-$(CONFIG_CPU_FREQ_GOV_SMARTMAX)	+= cpufreq_smartmax_gov.o
-#obj-$(CONFIG_CPU_FREQ_GOV_PMC)	+= cpufreq_pmc.o
-#obj-$(CONFIG_CPU_FREQ_GOV_LULZACTIVE)	+= cpufreq_lulzactive.o
-#obj-$(CONFIG_CPU_FREQ_GOV_N3OCOLD)	+= cpufreq_n3ocold.o
-#obj-$(CONFIG_CPU_FREQ_GOV_PEGASUSQ)	+= cpufreq_pegasusq.o
-#obj-$(CONFIG_CPU_FREQ_GOV_SMARTASS)	+= cpufreq_smartass.o
-obj-$(CONFIG_CPU_FREQ_GOV_SMARTASS2)	+= cpufreq_smartass2.o
-#obj-$(CONFIG_CPU_FREQ_GOV_TOUCHDEMAND)	+= cpufreq_touchdemand.o
-
 
 # CPUfreq cross-arch helpers
 obj-$(CONFIG_CPU_FREQ_TABLE)		+= freq_table.o
